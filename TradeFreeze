@@ -1,0 +1,119 @@
+-- Load Rayfield UI Library
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- Services
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- Global Execution Variable
+getgenv().AutoUnstoreLoop = false
+
+-- Create Main Window
+local Window = Rayfield:CreateWindow({
+    Name = "Blox Fruits - Inventory Tool",
+    LoadingTitle = "Fruit Manager",
+    LoadingSubtitle = "by Assistant",
+    ConfigurationSaving = { Enabled = false },
+    KeySystem = false
+})
+
+local MainTab = Window:CreateTab("Fruits", 4483362458)
+
+-- Function to handle the unstore & reset cycle
+local function ProcessUnstoreAndReset()
+    local commF = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("CommF_")
+    if not commF then return false end
+
+    -- Fetch inventory data from server
+    local inventory = commF:InvokeServer("getInventory")
+    if not inventory or type(inventory) ~= "table" then return false end
+
+    local highestFruit = nil
+    local highestPrice = -1
+
+    -- Find the current highest-value fruit
+    for _, item in pairs(inventory) do
+        if item.Type == "Fruit" and item.Price then
+            if item.Price > highestPrice then
+                highestPrice = item.Price
+                highestFruit = item.Name
+            end
+        end
+    end
+
+    if highestFruit then
+        -- 1. Unstore the fruit
+        commF:InvokeServer("LoadFruit", highestFruit)
+        
+        Rayfield:Notify({
+            Title = "Unstored & Deleting",
+            Content = "Unstored: " .. highestFruit .. " ($" .. tostring(highestPrice) .. ")",
+            Duration = 3,
+            Image = 4483362458,
+        })
+
+        task.wait(1)
+
+        -- 2. Force Character Reset
+        local character = LocalPlayer.Character
+        if character then
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid.Health = 0
+            end
+        end
+        return true
+    else
+        Rayfield:Notify({
+            Title = "Inventory Clear",
+            Content = "No more stored fruits remaining in inventory.",
+            Duration = 5,
+            Image = 4483362458,
+        })
+        return false
+    end
+end
+
+-- Core Infinite Loop Handler
+local function StartAutoLoop()
+    task.spawn(function()
+        while getgenv().AutoUnstoreLoop do
+            -- Wait for character to be loaded before executing
+            local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+            local humanoid = character:WaitForChild("Humanoid", 5)
+            
+            task.wait(2) -- Brief delay after spawning
+
+            if not getgenv().AutoUnstoreLoop then break end
+
+            local hasMoreFruits = ProcessUnstoreAndReset()
+            if not hasMoreFruits then
+                getgenv().AutoUnstoreLoop = false
+                break
+            end
+
+            -- Pause until character respawns for the next iteration
+            LocalPlayer.CharacterAdded:Wait()
+        end
+    end)
+end
+
+-- Warning Label
+MainTab:CreateParagraph({
+    Title = "⚠️ DANGER WARNING", 
+    Content = "Toggling this ON will run continuously in a loop, unstoring and PERMANENTLY DELETING every fruit in your inventory until empty!"
+})
+
+-- UI Toggle
+MainTab:CreateToggle({
+    Name = "Auto Unstore & Reset Loop",
+    CurrentValue = false,
+    Flag = "AutoUnstoreResetLoop",
+    Callback = function(Value)
+        getgenv().AutoUnstoreLoop = Value
+        if getgenv().AutoUnstoreLoop then
+            StartAutoLoop()
+        end
+    end,
+})
